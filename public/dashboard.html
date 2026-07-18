@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мои капсулы — Реестр доверенных лиц</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Реестр доверенных лиц</h1>
+    <div class="user">
+      <span id="userEmail"></span>
+      <button class="secondary small" id="logoutBtn">Выйти</button>
+    </div>
+  </header>
+
+  <div class="container page">
+    <div id="msg" class="msg"></div>
+
+    <div class="card">
+      <h2>Новая капсула</h2>
+      <form id="capsuleForm">
+        <label for="title">Заголовок</label>
+        <input type="text" id="title" required placeholder="Например: Письмо для семьи">
+        <label for="content">Текст сообщения</label>
+        <textarea id="content" placeholder="Содержимое, которое увидит доверенное лицо"></textarea>
+        <label for="video">Ссылка на видео (необязательно)</label>
+        <input type="url" id="video" placeholder="https://youtube.com/...">
+        <button type="submit" class="block">Создать капсулу</button>
+      </form>
+    </div>
+
+    <h2 style="margin-top:24px">Мои капсулы</h2>
+    <div id="capsules"><p class="muted">Загрузка…</p></div>
+
+    <div class="card">
+      <h2>Журнал действий</h2>
+      <button class="secondary small" id="auditBtn">Обновить журнал</button>
+      <div class="table-wrap" style="margin-top:10px">
+        <table class="audit" id="auditTable">
+          <thead><tr><th>Время (UTC)</th><th>Кто</th><th>Действие</th><th>Детали</th><th>IP</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <nav>
+        <a href="/privacy.html">Политика конфиденциальности</a>
+        <a href="/consent.html">Согласие на обработку ПДн</a>
+        <a href="/terms.html">Пользовательское соглашение</a>
+      </nav>
+      <p>Персональные данные обрабатываются в соответствии с Федеральным законом от 27.07.2006 № 152-ФЗ «О персональных данных». Данные граждан РФ хранятся на территории РФ (ФЗ-242).</p>
+      <p>© 2026 Реестр доверенных лиц · Тестовая версия (MVP).</p>
+    </div>
+  </footer>
+
+  <script>
+    const token = localStorage.getItem('token');
+    if (!token) location.href = '/';
+    document.getElementById('userEmail').textContent = localStorage.getItem('email') || '';
+    document.getElementById('logoutBtn').onclick = () => { localStorage.clear(); location.href = '/'; };
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+    function showMsg(text, cls = 'ok') {
+      const m = $('msg');
+      m.className = 'msg ' + cls;
+      m.textContent = text;
+      setTimeout(() => { m.className = 'msg'; }, 4000);
+    }
+
+    async function api(url, opts = {}) {
+      const res = await fetch(url, {
+        ...opts,
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token, ...opts.headers },
+      });
+      if (res.status === 401) { localStorage.clear(); location.href = '/'; return; }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка');
+      return data;
+    }
+
+    const ACTION_NAMES = {
+      register: 'Регистрация', login: 'Вход', login_failed: 'Неудачный вход',
+      capsule_created: 'Капсула создана', capsule_updated: 'Капсула изменена', capsule_deleted: 'Капсула удалена',
+      access_opened: 'Доступ открыт', access_locked: 'Доступ закрыт',
+      contact_added: 'Доверенное лицо добавлено', contact_revoked: 'Доступ отозван',
+      contact_restored: 'Доступ восстановлен', contact_deleted: 'Доверенное лицо удалено',
+      phone_check_ok: 'Номер найден в списке', phone_check_fail: 'Номер не найден в базе доступа',
+      phone_check_rate_limited: 'Лимит проверок по IP', sms_rate_limited: 'Лимит SMS',
+      otp_sent: 'SMS-код отправлен', otp_fail: 'Неверный код / блокировка', otp_ok: 'Верификация пройдена',
+      content_viewed: 'Контент просмотрен', content_denied_locked: 'Отказ: доступ закрыт',
+    };
+
+    async function loadCapsules() {
+      const capsules = await api('/api/capsules');
+      const box = $('capsules');
+      if (!capsules.length) {
+        box.innerHTML = '<p class="muted">Пока нет капсул — создайте первую выше.</p>';
+        return;
+      }
+      box.innerHTML = '';
+      for (const c of capsules) {
+        const el = document.createElement('div');
+        el.className = 'card capsule-item';
+        const isOpen = c.access_status === 'open';
+        el.innerHTML = `
+          <div class="capsule-head">
+            <strong>${esc(c.title)}</strong>
+            <span class="badge ${isOpen ? 'open' : 'locked'}">${isOpen ? 'Доступ открыт' : 'Доступ закрыт'}</span>
+          </div>
+          <p class="muted">${esc((c.content_text || '').slice(0, 120))}${(c.content_text || '').length > 120 ? '…' : ''}</p>
+          ${c.video_link ? `<p class="muted">Видео: ${esc(c.video_link)}</p>` : ''}
+          <p class="muted link" style="word-break:break-all">Публичная ссылка: ${esc(location.origin + '/capsule/' + c.token)}</p>
+          <div class="capsule-actions">
+            <button class="small ${isOpen ? 'danger' : ''}" data-act="toggle">${isOpen ? 'Закрыть доступ' : 'Открыть доступ'}</button>
+            <button class="secondary small" data-act="copylink">Копировать ссылку</button>
+            <button class="secondary small" data-act="contacts">Доверенные лица (${c.contacts_count})</button>
+            <button class="danger small" data-act="delete">Удалить</button>
+          </div>
+          <div class="contacts-box hidden">
+            <h3 style="margin-top:14px">Доверенные лица</h3>
+            <div class="contacts-list"></div>
+            <form class="add-contact">
+              <label>Имя</label>
+              <input type="text" name="name" required placeholder="Иван Петров">
+              <label>Телефон</label>
+              <input type="tel" name="phone" required placeholder="+7 900 123-45-67">
+              <button type="submit" class="small" style="margin-top:8px">Добавить</button>
+            </form>
+          </div>`;
+
+        el.querySelector('[data-act=copylink]').onclick = () => {
+          navigator.clipboard.writeText(location.origin + '/capsule/' + c.token);
+          showMsg('Ссылка на капсулу скопирована');
+        };
+        el.querySelector('[data-act=toggle]').onclick = async () => {
+          await api(`/api/capsules/${c.id}/access`, { method: 'POST', body: JSON.stringify({ status: isOpen ? 'locked' : 'open' }) });
+          showMsg(isOpen ? 'Доступ закрыт' : 'Доступ открыт');
+          loadCapsules();
+        };
+        el.querySelector('[data-act=delete]').onclick = async () => {
+          if (!confirm('Удалить капсулу вместе с доверенными лицами?')) return;
+          await api(`/api/capsules/${c.id}`, { method: 'DELETE' });
+          showMsg('Капсула удалена');
+          loadCapsules();
+        };
+        const contactsBox = el.querySelector('.contacts-box');
+        el.querySelector('[data-act=contacts]').onclick = async () => {
+          contactsBox.classList.toggle('hidden');
+          if (!contactsBox.classList.contains('hidden')) loadContacts(c.id, contactsBox);
+        };
+        el.querySelector('.add-contact').onsubmit = async (e) => {
+          e.preventDefault();
+          const f = e.target;
+          try {
+            await api(`/api/capsules/${c.id}/contacts`, {
+              method: 'POST',
+              body: JSON.stringify({ name: f.name.value, phone: f.phone.value }),
+            });
+            f.reset();
+            loadContacts(c.id, contactsBox);
+            showMsg('Доверенное лицо добавлено');
+          } catch (err) { showMsg(err.message, 'error'); }
+        };
+        box.appendChild(el);
+      }
+    }
+
+    const STATUS_RU = { pending: 'ожидает', verified: 'подтверждён', revoked: 'отозван' };
+
+    async function loadContacts(capsuleId, boxEl) {
+      const list = boxEl.querySelector('.contacts-list');
+      const contacts = await api(`/api/capsules/${capsuleId}/contacts`);
+      list.innerHTML = contacts.length ? '' : '<p class="muted">Никого нет</p>';
+      for (const t of contacts) {
+        const row = document.createElement('div');
+        row.className = 'contact-row';
+        row.innerHTML = `
+          <span><strong>${esc(t.name)}</strong> · +${esc(t.phone)} <span class="badge ${esc(t.status)}">${STATUS_RU[t.status] || esc(t.status)}</span></span>
+          <span class="actions">
+            <button class="${t.status === 'revoked' ? 'secondary' : 'danger'} small" data-a="revoke">${t.status === 'revoked' ? 'Восстановить' : 'Отозвать'}</button>
+            <button class="danger small" data-a="del">✕</button>
+          </span>`;
+        row.querySelector('[data-a=revoke]').onclick = async () => { await api(`/api/contacts/${t.id}/revoke`, { method: 'POST' }); loadContacts(capsuleId, boxEl); };
+        row.querySelector('[data-a=del]').onclick = async () => {
+          if (!confirm('Удалить доверенное лицо?')) return;
+          await api(`/api/contacts/${t.id}`, { method: 'DELETE' });
+          loadContacts(capsuleId, boxEl);
+        };
+        list.appendChild(row);
+      }
+    }
+
+    $('capsuleForm').onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api('/api/capsules', {
+          method: 'POST',
+          body: JSON.stringify({ title: $('title').value, content_text: $('content').value, video_link: $('video').value || null }),
+        });
+        e.target.reset();
+        showMsg('Капсула создана');
+        loadCapsules();
+      } catch (err) { showMsg(err.message, 'error'); }
+    };
+
+    async function loadAudit() {
+      const rows = await api('/api/audit');
+      const tbody = $('auditTable').querySelector('tbody');
+      tbody.innerHTML = '';
+      for (const r of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${esc(r.timestamp)}</td>
+          <td>${r.actor_type === 'owner' ? 'Владелец' : 'Доверенное лицо'}</td>
+          <td>${esc(ACTION_NAMES[r.action] || r.action)}</td>
+          <td>${esc(r.details || '')}</td>
+          <td>${esc(r.ip || '')}</td>`;
+        tbody.appendChild(tr);
+      }
+    }
+    $('auditBtn').onclick = loadAudit;
+
+    loadCapsules().catch((e) => showMsg(e.message, 'error'));
+    loadAudit().catch(() => {});
+  </script>
+</body>
+</html>

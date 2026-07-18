@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Реестр доверенных лиц — вход</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container narrow page">
+    <div class="card" style="margin-top:48px">
+      <h2 style="text-align:center">Реестр доверенных лиц</h2>
+      <p class="muted" style="text-align:center;margin-bottom:8px">Капсулы с сообщениями для ваших доверенных лиц</p>
+
+      <div class="tabs">
+        <button id="tabLogin" class="active">Вход</button>
+        <button id="tabRegister">Регистрация</button>
+      </div>
+
+      <div id="msg" class="msg"></div>
+
+      <form id="form">
+        <label for="email">Email</label>
+        <input type="email" id="email" required autocomplete="email">
+        <label for="password">Пароль</label>
+        <input type="password" id="password" required minlength="8" autocomplete="current-password">
+        <div class="checkbox-row hidden" id="consentRow">
+          <input type="checkbox" id="consent">
+          <span>Я даю согласие на обработку моих персональных данных (152-ФЗ)</span>
+        </div>
+        <button type="submit" class="block" id="submitBtn">Войти</button>
+      </form>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <nav>
+        <a href="/privacy.html">Политика конфиденциальности</a>
+        <a href="/consent.html">Согласие на обработку ПДн</a>
+        <a href="/terms.html">Пользовательское соглашение</a>
+      </nav>
+      <p>Персональные данные обрабатываются в соответствии с Федеральным законом от 27.07.2006 № 152-ФЗ «О персональных данных». Данные граждан РФ хранятся на территории РФ (ФЗ-242). Размещение информации, запрещённой к распространению (ФЗ-149), не допускается.</p>
+      <p>© 2026 Реестр доверенных лиц · Тестовая версия (MVP), не является публичной офертой. Оператор: <em>[указать реквизиты]</em>.</p>
+    </div>
+  </footer>
+
+  <script>
+    if (localStorage.getItem('token')) location.href = '/dashboard.html';
+
+    let mode = 'login';
+    const $ = (id) => document.getElementById(id);
+
+    function setMode(m) {
+      mode = m;
+      $('tabLogin').classList.toggle('active', m === 'login');
+      $('tabRegister').classList.toggle('active', m === 'register');
+      $('consentRow').classList.toggle('hidden', m === 'login');
+      $('submitBtn').textContent = m === 'login' ? 'Войти' : 'Зарегистрироваться';
+      $('msg').className = 'msg';
+    }
+    $('tabLogin').onclick = () => setMode('login');
+    $('tabRegister').onclick = () => setMode('register');
+
+    $('form').onsubmit = async (e) => {
+      e.preventDefault();
+      $('submitBtn').disabled = true;
+      try {
+        const res = await fetch(`/api/${mode}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: $('email').value,
+            password: $('password').value,
+            consent: $('consent').checked,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка');
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('email', data.email);
+        location.href = '/dashboard.html';
+      } catch (err) {
+        const m = $('msg');
+        m.className = 'msg error';
+        m.textContent = err.message;
+      } finally {
+        $('submitBtn').disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

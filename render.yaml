@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: reestr-mvp
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SMSRU_API_KEY
+        sync: false
+      - key: SMSRU_TEST
+        value: "0"

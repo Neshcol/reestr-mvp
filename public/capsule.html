@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Доступ к капсуле</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="container narrow page">
+    <div class="card" style="margin-top:48px">
+      <h2 style="text-align:center">Доступ к капсуле</h2>
+      <div id="msg" class="msg"></div>
+
+      <!-- Шаг 1: проверка номера -->
+      <div id="stepPhone">
+        <p class="muted">Введите свой номер телефона. Если он есть в списке доверенных лиц этой капсулы, мы отправим вам SMS-код.</p>
+        <form id="phoneForm">
+          <label for="phone">Номер телефона</label>
+          <input type="tel" id="phone" required placeholder="+7 900 123-45-67" autocomplete="tel">
+          <div class="checkbox-row">
+            <input type="checkbox" id="consent" required>
+            <span>Я даю согласие на обработку моих персональных данных (152-ФЗ)</span>
+          </div>
+          <button type="submit" class="block" id="sendBtn">Продолжить</button>
+        </form>
+      </div>
+
+      <!-- Шаг 2: код -->
+      <div id="stepCode" class="hidden">
+        <p class="muted">Мы отправили 6-значный код на ваш номер. Код действует 5 минут.</p>
+        <form id="codeForm">
+          <label for="code">Код из SMS</label>
+          <input type="text" id="code" inputmode="numeric" pattern="\d{6}" maxlength="6" required placeholder="000000" style="letter-spacing:6px;text-align:center;font-size:1.4rem">
+          <button type="submit" class="block">Подтвердить</button>
+          <button type="button" class="secondary block" id="resendBtn">Отправить код повторно</button>
+        </form>
+      </div>
+
+      <!-- Шаг 3: контент -->
+      <div id="stepContent" class="hidden">
+        <h3 id="capsuleTitle"></h3>
+        <p class="content-view" id="capsuleText"></p>
+        <p id="capsuleVideo"></p>
+      </div>
+
+      <!-- Доступ ещё не открыт -->
+      <div id="stepLocked" class="hidden">
+        <p class="msg info" style="display:block">Личность подтверждена, но доступ ещё не предоставлен владельцем. Загляните позже.</p>
+        <button class="secondary block" id="retryBtn">Проверить ещё раз</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <div class="inner">
+      <nav>
+        <a href="/privacy.html">Политика конфиденциальности</a>
+        <a href="/consent.html">Согласие на обработку ПДн</a>
+        <a href="/terms.html">Пользовательское соглашение</a>
+      </nav>
+      <p>Персональные данные обрабатываются в соответствии с Федеральным законом от 27.07.2006 № 152-ФЗ «О персональных данных». Данные граждан РФ хранятся на территории РФ (ФЗ-242).</p>
+      <p>© 2026 Реестр доверенных лиц · Тестовая версия (MVP).</p>
+    </div>
+  </footer>
+
+  <script>
+    const uuid = location.pathname.split('/').pop();
+    const $ = (id) => document.getElementById(id);
+    let sessionToken = null;
+    let phoneValue = '';
+
+    function show(step) {
+      for (const s of ['stepPhone', 'stepCode', 'stepContent', 'stepLocked']) $(s).classList.toggle('hidden', s !== step);
+    }
+    function showMsg(text, cls = 'error') {
+      const m = $('msg');
+      m.className = 'msg ' + cls;
+      m.textContent = text;
+    }
+    function clearMsg() { $('msg').className = 'msg'; }
+
+    async function requestCode() {
+      const res = await fetch(`/api/capsule/${uuid}/request-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phoneValue, consent: $('consent').checked }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Ошибка');
+      return data;
+    }
+
+    $('phoneForm').onsubmit = async (e) => {
+      e.preventDefault();
+      clearMsg();
+      const btn = $('sendBtn');
+      btn.disabled = true;
+      btn.textContent = 'Проверяем…';
+      phoneValue = $('phone').value;
+      try {
+        const data = await requestCode();
+        show('stepCode');
+        if (data.test) showMsg('Тестовый режим: код выведен в консоль сервера', 'info');
+      } catch (err) {
+        showMsg(err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Продолжить';
+      }
+    };
+
+    $('resendBtn').onclick = async () => {
+      clearMsg();
+      try {
+        const data = await requestCode();
+        showMsg(data.test ? 'Код отправлен (тестовый режим: см. консоль сервера)' : 'Код отправлен повторно', 'ok');
+      } catch (err) { showMsg(err.message); }
+    };
+
+    $('codeForm').onsubmit = async (e) => {
+      e.preventDefault();
+      clearMsg();
+      try {
+        const res = await fetch(`/api/capsule/${uuid}/verify`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: phoneValue, code: $('code').value }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Ошибка');
+        sessionToken = data.token;
+        await loadContent();
+      } catch (err) { showMsg(err.message); }
+    };
+
+    async function loadContent() {
+      const res = await fetch(`/api/capsule/${uuid}/content`, {
+        headers: { Authorization: 'Bearer ' + sessionToken },
+      });
+      const data = await res.json();
+      if (res.status === 403 && data.error === 'locked') { show('stepLocked'); return; }
+      if (!res.ok) { showMsg(data.message || data.error || 'Ошибка'); return; }
+      clearMsg();
+      $('capsuleTitle').textContent = data.title;
+      $('capsuleText').textContent = data.content_text || '';
+      if (data.video_link) {
+        const a = document.createElement('a');
+        a.href = data.video_link;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = 'Смотреть видео';
+        $('capsuleVideo').replaceChildren(a);
+      }
+      show('stepContent');
+    }
+
+    $('retryBtn').onclick = () => loadContent();
+  </script>
+</body>
+</html>
