@@ -31,9 +31,10 @@ npm start
 
 Backend на Node.js нельзя захостить на GitHub Pages (там только статика), поэтому схема такая: код лежит на GitHub, а запускается на [Render](https://render.com) (бесплатный тариф):
 
-1. Зайдите на render.com, войдите через GitHub.
-2. New → Blueprint → выберите репозиторий `reestr-mvp` — Render прочитает `render.yaml` и настроит всё сам (JWT_SECRET сгенерирует автоматически).
-3. После деплоя приложение получит адрес вида `https://reestr-mvp.onrender.com` с HTTPS из коробки.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Neshcol/reestr-mvp)
+
+1. Нажмите кнопку выше (или: render.com → войти через GitHub → New → Blueprint → выбрать `reestr-mvp`) — Render прочитает `render.yaml` и настроит всё сам (JWT_SECRET сгенерирует автоматически).
+2. После деплоя приложение получит адрес вида `https://reestr-mvp.onrender.com` с HTTPS из коробки.
 
 Ограничения бесплатного тарифа: сервис засыпает после 15 минут простоя (первый запрос будит его ~30–50 сек), диск эфемерный — SQLite-база обнуляется при каждом деплое/рестарте. Для теста это приемлемо; для реальных пользователей с номерами граждан РФ хостинг должен быть в РФ (ФЗ-242): Selectel / VK Cloud / Yandex Cloud + Postgres.
 
